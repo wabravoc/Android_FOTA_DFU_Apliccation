@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="20dp"
+    android:gravity="center_horizontal">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="nRF52840 OTA DFU Control"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="30dp"/>
+
+    <Button
+        android:id="@+id/btnConnect"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Connect to nRF52840"
+        android:backgroundTint="#007AFA"/>
+
+    <TextView
+        android:id="@+id/txtStatus"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Status: Disconnected"
+        android:layout_margin="10dp"/>
+
+    <Button
+        android:id="@+id/btnSelectFile"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Select Firmware (.bin)"
+        android:layout_marginTop="20dp"/>
+
+    <TextView
+        android:id="@+id/txtFileSize"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="File Size: 0 KB"
+        android:layout_margin="5dp"/>
+
+    <ProgressBar
+        android:id="@+id/progressBar"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="25dp"
+        android:layout_marginTop="30dp"
+        android:max="100"
+        android:progress="0"/>
+
+    <TextView
+        android:id="@+id/txtPercentage"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="0%"
+        android:textSize="16sp"/>
+
+    <Button
+        android:id="@+id/btnStartUpgrade"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Start Update"
+        android:backgroundTint="#28A745"
+        android:layout_marginTop="20dp"
+        android:enabled="false"/>
+</LinearLayout>
