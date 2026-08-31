@@ -1,7 +1,12 @@
 package com.example.dfu_test
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothManager
+import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanResult
 import android.content.Context
 import android.net.Uri
 import android.os.Build
@@ -11,7 +16,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,22 +29,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-// Official Nordic Semiconductor libraries for firmware upgrading over BLE
+// Librerías de Nordic Semiconductor para MCUmgr / DFU
 import io.runtime.mcumgr.ble.McuMgrBleTransport
 import io.runtime.mcumgr.dfu.FirmwareUpgradeCallback
 import io.runtime.mcumgr.dfu.FirmwareUpgradeController
 import io.runtime.mcumgr.dfu.FirmwareUpgradeManager
 import io.runtime.mcumgr.exception.McuMgrException
 
-/**
- * Main Activity of the application.
- * Configures the graphical container using Jetpack Compose and defines the visual theme.
- */
 class MainActivity : ComponentActivity() {
-
-    // Target nRF52840 physical hardware MAC address
-    private val DEVICE_MAC_ADDRESS = "C6:2D:6E:45:4C:23"
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -45,8 +45,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    // Load the control screen and pass the defined MAC address
-                    DfuControlScreen(DEVICE_MAC_ADDRESS)
+                    DfuControlScreen()
                 }
             }
         }
@@ -54,97 +53,133 @@ class MainActivity : ComponentActivity() {
 }
 
 /**
- * Composable UI component that handles all the visual layout,
- * reactive states, and user interactions to perform the DFU process.
+ * Representa un dispositivo BLE detectado en el escaneo
  */
+data class BleDeviceItem(
+    val name: String,
+    val address: String,
+    val device: BluetoothDevice
+)
+
+@SuppressLint("MissingPermission")
 @Composable
-fun DfuControlScreen(macAddress: String) {
+fun DfuControlScreen() {
     val context = LocalContext.current
 
-    // --- REACTIVE STATE VARIABLES (Keep UI synchronized upon updates) ---
-    var statusText by remember { mutableStateOf("Status: Disconnected") }
+    // --- ESTADOS REACTIVOS ---
+    var selectedDevice by remember { mutableStateOf<BluetoothDevice?>(null) }
+    var selectedMacAddress by remember { mutableStateOf<String?>(null) }
+    var statusText by remember { mutableStateOf("Status: No device selected") }
     var fileSizeText by remember { mutableStateOf("File size: 0 KB") }
     var progressValue by remember { mutableStateOf(0f) }
     var isUpgradeEnabled by remember { mutableStateOf(false) }
     var firmwareBytes by remember { mutableStateOf<ByteArray?>(null) }
 
-    // --- NORDIC UPGRADE MANAGER CONFIGURATION (MCUmgr) ---
-    val dfuManager = remember {
-        val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as android.bluetooth.BluetoothManager
-        val bluetoothAdapter = bluetoothManager.adapter
-        val bluetoothDevice = bluetoothAdapter.getRemoteDevice(macAddress)
+    // Estados para el Escaneo BLE
+    var isScanning by remember { mutableStateOf(false) }
+    var showDeviceDialog by remember { mutableStateOf(false) }
+    val discoveredDevices = remember { mutableStateListOf<BleDeviceItem>() }
 
-        // Initialize the MCUmgr BLE transport (Binds the SMP protocol to this device's GATT channel)
-        val transport = McuMgrBleTransport(context, bluetoothDevice)
-
-        // Enable debug logs to track the communication packet exchange in the Logcat console
-        transport.setLoggingEnabled(true)
-
-        // Instantiate the upgrade manager passing the configured transport
-        FirmwareUpgradeManager(transport, null)
+    // --- INSTANCIA DINÁMICA DE FIRMWARE UPGRADE MANAGER ---
+    val dfuManager = remember(selectedDevice) {
+        selectedDevice?.let { device ->
+            val transport = McuMgrBleTransport(context, device)
+            transport.setLoggingEnabled(true)
+            FirmwareUpgradeManager(transport, null)
+        }
     }
 
-    // The LaunchedEffect block runs once when the upgrade manager is initialized
+    // Configuración de callbacks del DFU Manager cuando se selecciona un dispositivo
     LaunchedEffect(dfuManager) {
-        // Register callbacks to handle asynchronous events and responses from the hardware
-        dfuManager.setFirmwareUpgradeCallback(object : FirmwareUpgradeCallback {
-
-            // Triggered when the firmware update process formally starts
+        dfuManager?.setFirmwareUpgradeCallback(object : FirmwareUpgradeCallback {
             override fun onUpgradeStarted(controller: FirmwareUpgradeController?) {
                 statusText = "Status: Upgrading Firmware..."
             }
 
-            // Triggered on internal state changes in the MCUmgr state machine (Validation, Upload, Reset)
             override fun onStateChanged(prevState: FirmwareUpgradeManager.State?, newState: FirmwareUpgradeManager.State?) {
                 if (newState == FirmwareUpgradeManager.State.RESET) {
                     statusText = "Status: Sending reboot command..."
                 }
             }
 
-            // Calculates the upload progress percentage as BLE data packets are sent
             override fun onUploadProgressChanged(bytesSent: Int, imageSize: Int, timestamp: Long) {
                 progressValue = bytesSent.toFloat() / imageSize.toFloat()
             }
 
-            // Success. The chip processed the image, rebooted, and is running the new application
             override fun onUpgradeCompleted() {
                 statusText = "Status: Upgrade Successful!"
                 progressValue = 1f
-                Toast.makeText(context, "The board has rebooted with the new firmware", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "Board rebooted with new firmware", Toast.LENGTH_LONG).show()
             }
 
-            // Triggered if the user or the app proactively cancels the upload
             override fun onUpgradeCanceled(state: FirmwareUpgradeManager.State) {
                 statusText = "Status: Cancelled"
             }
 
-            // Triggered if there is a transmission failure, connection loss, or corrupt image signature
             override fun onUpgradeFailed(state: FirmwareUpgradeManager.State?, error: McuMgrException?) {
                 statusText = "Status: Upgrade failed: ${error?.message}"
             }
         })
     }
 
-    // --- HARDWARE PERMISSION LAUNCHER (Required for Android 12 or higher) ---
+    // --- FUNCIÓN PARA INICIAR EL ESCANEO BLE ---
+    fun startBleScan() {
+        val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+        val scanner = bluetoothManager.adapter?.bluetoothLeScanner
+
+        if (scanner == null) {
+            Toast.makeText(context, "Bluetooth no disponible o desactivado", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        discoveredDevices.clear()
+        isScanning = true
+        showDeviceDialog = true
+
+        val scanCallback = object : ScanCallback() {
+            override fun onScanResult(callbackType: Int, result: ScanResult?) {
+                result?.device?.let { device ->
+                    val deviceName = device.name ?: "Desconocido / Sin Nombre"
+                    val deviceAddress = device.address
+
+                    // Evita duplicados en la lista visual
+                    if (discoveredDevices.none { it.address == deviceAddress }) {
+                        discoveredDevices.add(BleDeviceItem(deviceName, deviceAddress, device))
+                    }
+                }
+            }
+        }
+
+        // Iniciar escaneo
+        scanner.startScan(scanCallback)
+
+        // Detener el escaneo automáticamente tras 7 segundos para ahorrar batería
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            try {
+                scanner.stopScan(scanCallback)
+            } catch (e: Exception) { /* Ignorar si ya fue cerrado */ }
+            isScanning = false
+        }, 7000)
+    }
+
+    // --- LAUNCHER DE PERMISOS ---
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        val granted = permissions.entries.all { it.value }
-        if (granted) {
-            statusText = "Status: Bonded via BLE"
-            Toast.makeText(context, "Connection ready for DFU transport", Toast.LENGTH_SHORT).show()
+        val allGranted = permissions.entries.all { it.value }
+        if (allGranted) {
+            startBleScan()
         } else {
-            statusText = "Status: Permissions denied"
+            Toast.makeText(context, "Permisos denegados para buscar dispositivos", Toast.LENGTH_SHORT).show()
         }
     }
 
-    // --- FILE SELECTOR LAUNCHER (Android System Storage Picker) ---
+    // --- SELECTOR DE ARCHIVO ZIP ---
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let {
             try {
-                // Open an input stream to read the ZIP file into a raw byte array in memory
                 val inputStream = context.contentResolver.openInputStream(it)
                 val bytes = inputStream?.readBytes()
                 inputStream?.close()
@@ -152,15 +187,17 @@ fun DfuControlScreen(macAddress: String) {
                 if (bytes != null) {
                     firmwareBytes = bytes
                     fileSizeText = "File size: ${bytes.size / 1024} KB"
-                    isUpgradeEnabled = true // Enable the "Start Upgrade" button
+                    if (selectedDevice != null) {
+                        isUpgradeEnabled = true
+                    }
                 }
             } catch (e: Exception) {
-                Toast.makeText(context, "Error reading the ZIP file", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Error al leer el archivo .zip", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
-    // --- GRAPHICAL USER INTERFACE LAYOUT ---
+    // --- INTERFAZ GRÁFICA PRINCIPAL ---
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -172,28 +209,47 @@ fun DfuControlScreen(macAddress: String) {
             text = "nRF52840 OTA DFU (Compose)",
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 32.dp)
+            modifier = Modifier.padding(bottom = 24.dp)
         )
 
-        // Button 1: Request permissions and connect
+// Botón 1: Buscar y Seleccionar Dispositivo BLE
         Button(
             onClick = {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    // Requests Bluetooth Scan and Connect permissions on Android 12+
+                    // Android 12 o superior (API 31+)
                     permissionLauncher.launch(
                         arrayOf(
                             Manifest.permission.BLUETOOTH_SCAN,
-                            Manifest.permission.BLUETOOTH_CONNECT
+                            Manifest.permission.BLUETOOTH_CONNECT,
+                            Manifest.permission.ACCESS_FINE_LOCATION,
+                            Manifest.permission.ACCESS_COARSE_LOCATION
                         )
                     )
                 } else {
-                    statusText = "Status: Bonded via BLE"
+                    // Android 11 o inferior
+                    permissionLauncher.launch(
+                        arrayOf(
+                            Manifest.permission.ACCESS_FINE_LOCATION,
+                            Manifest.permission.ACCESS_COARSE_LOCATION
+                        )
+                    )
                 }
             },
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF007AFA))
         ) {
-            Text("Connect to nRF52840", color = Color.White)
+            Text("Buscar Dispositivos BLE", color = Color.White)
+        }
+
+        // Muestra la MAC seleccionada actualmente
+        selectedMacAddress?.let { mac ->
+            Text(
+                text = "MAC Seleccionada: $mac",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF28A745),
+                modifier = Modifier.padding(top = 8.dp)
+            )
         }
 
         Text(
@@ -202,9 +258,9 @@ fun DfuControlScreen(macAddress: String) {
             fontSize = 16.sp
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
-        // Button 2: Open file explorer to select the firmware .zip
+        // Botón 2: Seleccionar Archivo .zip / .bin
         Button(
             onClick = { filePickerLauncher.launch("application/zip") },
             modifier = Modifier.fillMaxWidth()
@@ -218,9 +274,9 @@ fun DfuControlScreen(macAddress: String) {
             fontSize = 14.sp
         )
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
-        // Horizontal progress bar indicator
+        // Barra de progreso
         LinearProgressIndicator(
             progress = { progressValue },
             modifier = Modifier
@@ -237,15 +293,19 @@ fun DfuControlScreen(macAddress: String) {
 
         Spacer(modifier = Modifier.weight(1f))
 
-        // Button 3: Extract the binary and start the DFU transfer
+        // Botón 3: Iniciar Transferencia DFU
         Button(
             onClick = {
+                if (dfuManager == null) {
+                    Toast.makeText(context, "Selecciona un dispositivo primero", Toast.LENGTH_SHORT).show()
+                    return@Button
+                }
+
                 firmwareBytes?.let { bytes ->
                     try {
-                        // 1. Set the classic MCUboot test-and-confirm mode (Uploads, verifies, reboots, and confirms)
                         dfuManager.setMode(FirmwareUpgradeManager.Mode.TEST_AND_CONFIRM)
 
-                        // 2. Manual Zip decompressor to locate and extract the .bin payload on the fly
+                        // Descompresión del ZIP para extraer el archivo binario payload
                         val zipInputStream = java.util.zip.ZipInputStream(bytes.inputStream())
                         var entry = zipInputStream.nextEntry
                         var binBytes: ByteArray? = null
@@ -261,15 +321,13 @@ fun DfuControlScreen(macAddress: String) {
 
                         if (binBytes != null) {
                             statusText = "Status: Initiating transfer..."
-
-                            // 3. Pass the clean, extracted raw binary directly to the asynchronous upgrade manager
                             dfuManager.start(binBytes)
                         } else {
-                            statusText = "Error: No .bin file was found inside the selected ZIP"
+                            statusText = "Error: No .bin found inside ZIP"
                         }
 
                     } catch (e: McuMgrException) {
-                        statusText = "Error starting DFU: ${e.message}"
+                        statusText = "Error DFU: ${e.message}"
                     } catch (e: Exception) {
                         statusText = "Unexpected error: ${e.message}"
                     }
@@ -281,5 +339,72 @@ fun DfuControlScreen(macAddress: String) {
         ) {
             Text("Start Upgrade", color = Color.White)
         }
+    }
+
+    // --- VENTANA / DIÁLOGO DE SELECCIÓN DE DISPOSITIVOS ---
+    if (showDeviceDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeviceDialog = false },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Seleccionar Dispositivo")
+                    if (isScanning) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp
+                        )
+                    }
+                }
+            },
+            text = {
+                if (discoveredDevices.isEmpty()) {
+                    Text("Buscando dispositivos cercanos...")
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 300.dp)
+                    ) {
+                        items(discoveredDevices) { item ->
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        selectedDevice = item.device
+                                        selectedMacAddress = item.address
+                                        statusText = "Dispositivo seleccionado: ${item.address}"
+                                        showDeviceDialog = false
+                                        if (firmwareBytes != null) {
+                                            isUpgradeEnabled = true
+                                        }
+                                    }
+                                    .padding(vertical = 10.dp)
+                            ) {
+                                Text(
+                                    text = item.name,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp
+                                )
+                                Text(
+                                    text = item.address,
+                                    fontSize = 12.sp,
+                                    color = Color.Gray
+                                )
+                                HorizontalDivider(modifier = Modifier.padding(top = 8.dp))
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showDeviceDialog = false }) {
+                    Text("Cancelar")
+                }
+            }
+        )
     }
 }

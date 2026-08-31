@@ -1,69 +1,126 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="20dp"
-    android:gravity="center_horizontal">
+    android:background="#3008b8"
+    android:padding="24dp">
 
+    <!-- Título Principal -->
     <TextView
+        android:id="@+id/txtTitle"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="nRF52840 OTA DFU Control"
+        android:textColor="#FFFFFF"
         android:textSize="22sp"
         android:textStyle="bold"
-        android:layout_marginBottom="30dp"/>
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toTopOf="@+id/btnConnect"
+        app:layout_constraintVertical_chainStyle="packed" />
 
+    <!-- Botón de Conexión BLE -->
     <Button
         android:id="@+id/btnConnect"
-        android:layout_width="match_parent"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:backgroundTint="#007AFA"
         android:text="Connect to nRF52840"
-        android:backgroundTint="#007AFA"/>
+        android:textColor="#FFFFFF"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/txtTitle"
+        app:layout_constraintBottom_toTopOf="@+id/txtStatus" />
 
+    <!-- Estado de Conexión -->
     <TextView
         android:id="@+id/txtStatus"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
         android:text="Status: Disconnected"
-        android:layout_margin="10dp"/>
+        android:textColor="#B0BEC5"
+        android:textSize="14sp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/btnConnect"
+        app:layout_constraintBottom_toTopOf="@+id/btnSelectFile" />
 
+    <!-- Botón Seleccionar Firmware -->
     <Button
         android:id="@+id/btnSelectFile"
-        android:layout_width="match_parent"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:backgroundTint="#37474F"
         android:text="Select Firmware (.bin)"
-        android:layout_marginTop="20dp"/>
+        android:textColor="#FFFFFF"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/txtStatus"
+        app:layout_constraintBottom_toTopOf="@+id/txtFileSize" />
 
+    <!-- Tamaño del Archivo -->
     <TextView
         android:id="@+id/txtFileSize"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
         android:text="File Size: 0 KB"
-        android:layout_margin="5dp"/>
+        android:textColor="#B0BEC5"
+        android:textSize="14sp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/btnSelectFile"
+        app:layout_constraintBottom_toTopOf="@+id/progressBar" />
 
+    <!-- Barra de Progreso DFU -->
     <ProgressBar
         android:id="@+id/progressBar"
         style="?android:attr/progressBarStyleHorizontal"
-        android:layout_width="match_parent"
-        android:layout_height="25dp"
-        android:layout_marginTop="30dp"
+        android:layout_width="0dp"
+        android:layout_height="20dp"
+        android:layout_marginTop="32dp"
         android:max="100"
-        android:progress="0"/>
+        android:progress="0"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/txtFileSize"
+        app:layout_constraintBottom_toTopOf="@+id/txtPercentage" />
 
+    <!-- Porcentaje DFU -->
     <TextView
         android:id="@+id/txtPercentage"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
         android:text="0%"
-        android:textSize="16sp"/>
+        android:textColor="#FFFFFF"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/progressBar"
+        app:layout_constraintBottom_toTopOf="@+id/btnStartUpgrade" />
 
+    <!-- Botón Iniciar Actualización -->
     <Button
         android:id="@+id/btnStartUpgrade"
-        android:layout_width="match_parent"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:text="Start Update"
+        android:layout_marginTop="24dp"
         android:backgroundTint="#28A745"
-        android:layout_marginTop="20dp"
-        android:enabled="false"/>
-</LinearLayout>
+        android:enabled="false"
+        android:text="Start Update"
+        android:textColor="#FFFFFF"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/txtPercentage"
+        app:layout_constraintBottom_toBottomOf="parent" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>
